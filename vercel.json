@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "builds": [
+   "builds": [
     {
       "src": "server/index.js",
       "use": "@vercel/node"
@@ -10,7 +10,7 @@
       "use": "@vercel/static-build",
       "config": {
         "distDir": "build",
-        "installCommand": "cd ../ && npm install && cd client && npm install",
+        "installCommand": "npm install --prefix .. && npm install",
         "buildCommand": "npm run build"
       }
     }
