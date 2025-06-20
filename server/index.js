@@ -4,82 +4,151 @@ const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 
-// Configure CORS for Socket.io and Express
+// Configure CORS for production and development
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.CLIENT_URL 
+    : "http://localhost:3000",
+  methods: ["GET", "POST", "OPTIONS"],
+  credentials: true
+};
+
+// Configure Socket.io with proper settings for Vercel
 const io = socketIo(server, {
-  cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
+  cors: corsOptions,
+  path: '/socket.io',  // Important for Vercel routing
+  transports: ['websocket', 'polling']
 });
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/pinAuth', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('MongoDB connection error:', err));
+// Serve static files from React in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+}
 
-// Define Session Schema
+// Connect to MongoDB with enhanced error handling
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000
+    });
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    process.exit(1);
+  }
+};
+connectDB();
+
+// Define Session Schema with validation
 const sessionSchema = new mongoose.Schema({
-  pin: { type: String, required: true, unique: true },
-  socketId: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now, expires: '1h' } // Auto-delete after 1 hour
+  pin: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    minlength: 4,
+    maxlength: 10,
+    validate: {
+      validator: (v) => /^\d+$/.test(v),
+      message: 'PIN must contain only numbers'
+    }
+  },
+  socketId: { 
+    type: String, 
+    required: true 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now, 
+    expires: '1h' 
+  }
 });
 
 const Session = mongoose.model('Session', sessionSchema);
 
-// Socket.io connection
+// Enhanced Socket.io connection with error handling
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
-  // Handle PIN entry
-  socket.on('enter-pin', async (pin) => {
+  // Handle PIN entry with validation
+  socket.on('enter-pin', async (pin, callback) => {
     try {
-      // Check if PIN already exists
+      if (!pin || pin.length < 4) {
+        throw new Error('PIN must be at least 4 characters');
+      }
+
       const existingSession = await Session.findOne({ pin });
       
       if (existingSession) {
-        // Notify the existing session to logout
-        io.to(existingSession.socketId).emit('force-logout', { message: 'Logged in from another device' });
+        // Notify existing session
+        io.to(existingSession.socketId).emit('force-logout', { 
+          message: 'Logged in from another device',
+          timestamp: Date.now()
+        });
         
-        // Update the session with new socket ID
-        await Session.updateOne({ pin }, { socketId: socket.id });
+        // Update session atomically
+        await Session.findOneAndUpdate(
+          { pin }, 
+          { socketId: socket.id, createdAt: new Date() }
+        );
         
-        // Notify the new client that they overwrote an existing session
-        socket.emit('pin-status', { status: 'overwritten', pin });
+        callback({ status: 'overwritten', pin });
       } else {
-        // Create new session
         await Session.create({ pin, socketId: socket.id });
-        socket.emit('pin-status', { status: 'success', pin });
+        callback({ status: 'success', pin });
       }
     } catch (err) {
-      console.error('Error handling PIN:', err);
-      socket.emit('pin-error', { message: 'Error processing PIN' });
+      console.error('PIN handling error:', err);
+      callback({ status: 'error', message: err.message });
     }
   });
 
-  // Handle disconnection
+  // Handle disconnection with cleanup
   socket.on('disconnect', async () => {
     console.log('Client disconnected:', socket.id);
-    await Session.deleteOne({ socketId: socket.id });
+    try {
+      await Session.deleteOne({ socketId: socket.id });
+    } catch (err) {
+      console.error('Session cleanup error:', err);
+    }
   });
+
+  // Heartbeat to keep connection alive
+  socket.on('ping', (cb) => cb());
 });
 
-// Basic route
-app.get('/', (req, res) => {
-  res.send('PIN Auth Server');
+// API routes
+app.get('/api/status', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
 });
+
+// Serve React app for all other routes in production
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  });
+}
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
 });

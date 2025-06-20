@@ -6,7 +6,7 @@
       "use": "@vercel/node"
     },
     {
-      "src": "client/build",
+      "src": "client/package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "build"
@@ -19,8 +19,15 @@
       "dest": "server/index.js"
     },
     {
+      "src": "/socket.io/(.*)",
+      "dest": "server/index.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*"
+      }
+    },
+    {
       "src": "/(.*)",
-      "dest": "client/build"
+      "dest": "client/build/$1"
     }
   ]
 }
