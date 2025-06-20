@@ -9,15 +9,13 @@
       "src": "client/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "build"
+        "distDir": "build",
+        "installCommand": "cd ../ && npm install && cd client && npm install",
+        "buildCommand": "npm run build"
       }
     }
   ],
   "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "server/index.js"
-    },
     {
       "src": "/socket.io/(.*)",
       "dest": "server/index.js",
@@ -26,8 +24,15 @@
       }
     },
     {
+      "src": "/api/(.*)",
+      "dest": "server/index.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "client/build/$1"
+      "dest": "client/build/$1",
+      "headers": {
+        "Cache-Control": "s-maxage=0"
+      }
     }
   ]
 }

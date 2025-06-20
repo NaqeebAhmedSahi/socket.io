@@ -1,13 +1,12 @@
 {
   "name": "mern-pin-auth",
   "version": "1.0.0",
-  "description": "MERN app with Socket.io for PIN-based authentication",
   "scripts": {
     "start": "node server/index.js",
     "server": "nodemon server/index.js",
     "client": "npm start --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "build": "npm run build --prefix client",
+    "build": "cd client && npm install && npm run build",
     "install-all": "npm install && npm install --prefix client"
   },
   "dependencies": {
