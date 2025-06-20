@@ -6,22 +6,16 @@
       "use": "@vercel/node"
     },
     {
-      "src": "client/package.json",
+      "src": "client/vercel-build.sh",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "build",
-        "installCommand": "npm install",
-        "buildCommand": "npm install && cd client && npm run build"
+        "distDir": "client/build"
       }
     }
   ],
   "routes": [
     {
       "src": "/socket.io/(.*)",
-      "dest": "server/index.js"
-    },
-    {
-      "src": "/api/(.*)",
       "dest": "server/index.js"
     },
     {
